@@ -6,6 +6,13 @@ psychiatre, centre pluridisciplinaire…) depuis un seul fichier : `src/config/c
 
 > Marque fictive, site de démonstration. Les médecins du jeu de données sont inventés.
 
+## Méthode de travail
+
+Projet piloté par **Adnane Staouti** : cahier des charges, architecture, choix techniques, règles métier,
+scénarios de test et déploiement. Le code a été écrit par une IA (Claude, d'Anthropic) à partir de ses
+instructions, puis testé en local (tests unitaires et de bout en bout, voir le [rapport de recette](docs/rapport-qa.md)).
+Chaque règle et chaque choix sont listés et justifiés dans [DECISIONS.md](DECISIONS.md), avec leur statut de validation.
+
 ![Architecture](docs/diagrams/05-architecture.png)
 
 ## Fonctionnalités
