@@ -34,7 +34,13 @@ export async function sendEmail(to: string, subject: string, html: string, text:
         text,
       }),
     });
-    if (!res.ok) console.error(`[email] Resend refused: ${res.status}`);
+    if (!res.ok) {
+      // Resend explains why (e.g. "You can only send testing emails to your own email address");
+      // e-mail addresses are masked so no personal data reaches the logs
+      const body = (await res.json().catch(() => ({}))) as { name?: string; message?: string };
+      const reason = String(body.message ?? "").replace(/[^\s@()<>]+@[^\s@()<>]+/g, "***").slice(0, 200);
+      console.error(`[email] Resend refused: ${res.status} ${body.name ?? ""} ${reason}`.trim());
+    }
   } catch (error) {
     console.error("[email] could not reach Resend:", (error as Error).message);
   }
