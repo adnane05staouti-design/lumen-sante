@@ -29,6 +29,7 @@ export function BookingWidget({ locale, t, specs }: { locale: Locale; t: Diction
   const [info, setInfo] = useState<WidgetAvailability | null>(null);
   const [day, setDay] = useState<string | null>(null);
   const [slots, setSlots] = useState<Slot[] | null>(null);
+  const [taken, setTaken] = useState<string[]>([]);
   const [slot, setSlot] = useState<string | null>(null);
   const [loadingDays, startDays] = useTransition();
   const [loadingSlots, startSlots] = useTransition();
@@ -41,7 +42,7 @@ export function BookingWidget({ locale, t, specs }: { locale: Locale; t: Diction
       const res = await fetchWidget(specialty);
       if (!alive) return;
       setInfo(res);
-      setDay(res.next?.day && res.days.includes(res.next.day) ? res.next.day : (res.days[0] ?? null));
+      setDay(res.next?.day && res.days.includes(res.next.day) ? res.next.day : (res.days.find((d) => !res.full?.includes(d)) ?? res.days[0] ?? null));
     });
     return () => {
       alive = false;
@@ -56,6 +57,7 @@ export function BookingWidget({ locale, t, specs }: { locale: Locale; t: Diction
       const res = await fetchSlots({ specialty, day });
       if (!alive) return;
       setSlots(res.slots);
+      setTaken(res.taken);
       setSlot(null);
     });
     return () => {
@@ -70,7 +72,14 @@ export function BookingWidget({ locale, t, specs }: { locale: Locale; t: Diction
     return `${t.days[weekday(d)]} ${dayNum(d)}`;
   };
 
-  const shown = slots?.slice(0, MAX_SLOTS) ?? [];
+  // free and booked times in order; the window starts just before the first free time
+  const all = [
+    ...(slots ?? []).map((s) => ({ time: s.time, free: true, key: s.startsAt })),
+    ...taken.filter((time) => !slots?.some((s) => s.time === time)).map((time) => ({ time, free: false, key: `taken-${time}` })),
+  ].sort((a, b) => a.time.localeCompare(b.time));
+  const firstFree = all.findIndex((x) => x.free);
+  const start = firstFree > 1 ? firstFree - 1 : 0;
+  const shown = slots ? all.slice(start, start + MAX_SLOTS) : [];
   const href = `/${locale}/rendez-vous?specialty=${specialty}${day ? `&day=${day}` : ""}${slot ? `&time=${slot}` : ""}`;
 
   return (
@@ -133,20 +142,29 @@ export function BookingWidget({ locale, t, specs }: { locale: Locale; t: Diction
       <div className="mt-2 grid grid-cols-5 gap-1.5">
         {!info &&
           Array.from({ length: 5 }, (_, i) => <span key={i} className="h-[46px] animate-pulse rounded-lg border border-line" />)}
-        {info?.days.map((d) => (
-          <button
-            key={d}
-            type="button"
-            onClick={() => setDay(d)}
-            aria-pressed={day === d}
-            className={`rounded-lg border py-2 text-center transition-all active:scale-95 ${
-              day === d ? "border-fg bg-fg text-bg" : "border-line text-muted hover:border-line-strong hover:text-fg"
-            }`}
-          >
-            <span className="block text-[0.65rem] opacity-70">{t.days[weekday(d)]}</span>
-            <span className="font-display text-sm font-semibold">{dayNum(d)}</span>
-          </button>
-        ))}
+        {info?.days.map((d) => {
+          const isFull = info.full?.includes(d);
+          return (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setDay(d)}
+              disabled={isFull}
+              aria-pressed={day === d}
+              aria-label={isFull ? `${t.days[weekday(d)]} ${dayNum(d)} — ${t.full}` : undefined}
+              className={`rounded-lg border py-2 text-center transition-all active:scale-95 ${
+                isFull
+                  ? "cursor-not-allowed border-line/60 text-muted/50"
+                  : day === d
+                    ? "border-fg bg-fg text-bg"
+                    : "border-line text-muted hover:border-line-strong hover:text-fg"
+              }`}
+            >
+              <span className="block text-[0.65rem] opacity-70">{isFull ? t.full : t.days[weekday(d)]}</span>
+              <span className={`font-display text-sm font-semibold ${isFull ? "line-through" : ""}`}>{dayNum(d)}</span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="relative mt-4 min-h-[84px]">
@@ -161,20 +179,27 @@ export function BookingWidget({ locale, t, specs }: { locale: Locale; t: Diction
           >
             {loadingSlots || slots === null ? (
               Array.from({ length: 6 }, (_, i) => <span key={i} className="h-[38px] animate-pulse rounded-lg border border-line" />)
-            ) : shown.length === 0 ? (
+            ) : !shown.some((x) => x.free) ? (
               <p className="col-span-3 py-6 text-center text-xs text-muted">{t.noSlot}</p>
             ) : (
               shown.map((s, i) => (
                 <motion.button
-                  key={s.startsAt}
+                  key={s.key}
                   type="button"
-                  onClick={() => setSlot(s.time)}
-                  aria-pressed={slot === s.time}
+                  onClick={s.free ? () => setSlot(s.time) : undefined}
+                  disabled={!s.free}
+                  title={s.free ? undefined : t.taken}
+                  aria-label={s.free ? undefined : `${s.time} — ${t.taken}`}
+                  aria-pressed={s.free ? slot === s.time : undefined}
                   initial={{ opacity: 0, scale: 0.85 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: i * 0.035, duration: 0.3, ease }}
-                  className={`rounded-lg border py-2 font-display text-sm transition-colors active:scale-95 ${
-                    slot === s.time ? "border-accent bg-accent/10 text-accent" : "border-line hover:border-line-strong"
+                  className={`rounded-lg border py-2 font-display text-sm transition-colors ${
+                    !s.free
+                      ? "cursor-not-allowed border-dashed border-line/70 text-muted/45 line-through"
+                      : slot === s.time
+                        ? "border-accent bg-accent/10 text-accent active:scale-95"
+                        : "border-line hover:border-line-strong active:scale-95"
                   }`}
                   dir="ltr"
                 >

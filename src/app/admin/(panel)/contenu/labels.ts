@@ -34,6 +34,8 @@ export const LABELS: Record<string, string> = {
   "booking.tomorrow": "Mot « demain »",
   "booking.noSlot": "Widget : aucun créneau",
   "booking.live": "Widget : « Disponibilités en direct »",
+  "booking.taken": "Heure déjà réservée (bulle d'aide)",
+  "booking.full": "Jour complet",
   // effects / home
   "fx.marquee": "Bandeau défilant (une phrase par ligne)",
   "fx.scroll": "Indication « Faites défiler »",

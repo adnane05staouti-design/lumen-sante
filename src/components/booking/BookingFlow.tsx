@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { ArrowLeft, ArrowRight, CalendarCheck, Check, Loader2, UserRound } from "lucide-react";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { createAppointment, type BookingResult } from "@/app/actions/booking";
-import { fetchSlots } from "@/lib/api-client";
+import { fetchSlots, fetchWidget } from "@/lib/api-client";
 import { clinic, type SpecialtyId } from "@/config/clinic";
 import type { Dictionary } from "@/dictionaries";
 import type { SpecialtyTexts } from "@/lib/content-types";
@@ -37,6 +37,8 @@ export function BookingFlow({ locale, t, days, specialties, doctors, initial, sp
   );
   const [day, setDay] = useState(days.includes(initial.day ?? "") ? initial.day! : days[0]);
   const [slots, setSlots] = useState<Slot[] | null>(null);
+  const [taken, setTaken] = useState<string[]>([]); // times already booked: shown greyed out, not clickable
+  const [full, setFull] = useState<string[]>([]); // days fully booked (next two weeks)
   const [slot, setSlot] = useState<Slot | null>(null);
   const [loading, startLoading] = useTransition();
   const [sending, startSending] = useTransition();
@@ -53,6 +55,7 @@ export function BookingFlow({ locale, t, days, specialties, doctors, initial, sp
       const res = await fetchSlots({ specialty, doctorId, day });
       if (alive) {
         setSlots(res.slots);
+        setTaken(res.taken);
         setSlot((wantedTime && res.slots.find((x) => x.time === wantedTime)) || null);
         setWantedTime(undefined);
       }
@@ -62,6 +65,26 @@ export function BookingFlow({ locale, t, days, specialties, doctors, initial, sp
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- wantedTime is only read once
   }, [specialty, doctorId, day, step]);
+
+  // fully booked days of the chosen specialty (greyed out in the day picker)
+  useEffect(() => {
+    if (!specialty) return;
+    let alive = true;
+    fetchWidget(specialty).then((res) => alive && setFull(res.full ?? []));
+    return () => {
+      alive = false;
+    };
+  }, [specialty]);
+
+  /** free times and booked times, in chronological order */
+  const times = useMemo(() => {
+    if (!slots) return [];
+    const freeTimes = new Set(slots.map((s) => s.time));
+    return [
+      ...slots.map((s) => ({ time: s.time, slot: s as Slot | null })),
+      ...taken.filter((time) => !freeTimes.has(time)).map((time) => ({ time, slot: null as Slot | null })),
+    ].sort((a, b) => a.time.localeCompare(b.time));
+  }, [slots, taken]);
 
   const dayLabel = (d: string, opts: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat(tag[locale], { ...opts, timeZone: "UTC" }).format(new Date(`${d}T12:00:00Z`));
@@ -86,7 +109,11 @@ export function BookingFlow({ locale, t, days, specialties, doctors, initial, sp
         setStep(1);
         setSlots(null);
         setSlot(null);
-        startLoading(async () => setSlots((await fetchSlots({ specialty, doctorId, day })).slots));
+        startLoading(async () => {
+          const res = await fetchSlots({ specialty, doctorId, day });
+          setSlots(res.slots);
+          setTaken(res.taken);
+        });
       }
     });
   }
@@ -229,21 +256,30 @@ export function BookingFlow({ locale, t, days, specialties, doctors, initial, sp
 
             <p className="mt-8 text-sm text-muted">{t.pickDay}</p>
             <div className="mt-3 flex gap-2 overflow-x-auto pb-2 [scrollbar-width:thin]">
-              {days.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => setDay(d)}
-                  aria-pressed={d === day}
-                  className={`min-w-[68px] rounded-xl border px-3 py-3 text-center transition-all ${
-                    d === day ? "border-fg bg-fg text-bg" : "border-line text-muted hover:border-line-strong"
-                  }`}
-                >
-                  <span className="block text-xs opacity-70">{dayLabel(d, { weekday: "short" })}</span>
-                  <span className="block font-display text-lg font-semibold">{dayLabel(d, { day: "numeric" })}</span>
-                  <span className="block text-[0.65rem] opacity-60">{dayLabel(d, { month: "short" })}</span>
-                </button>
-              ))}
+              {days.map((d) => {
+                const isFull = full.includes(d);
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setDay(d)}
+                    disabled={isFull}
+                    aria-pressed={d === day}
+                    aria-label={isFull ? `${dayLabel(d, { weekday: "long", day: "numeric", month: "long" })} — ${t.full}` : undefined}
+                    className={`min-w-[68px] rounded-xl border px-3 py-3 text-center transition-all ${
+                      isFull
+                        ? "cursor-not-allowed border-line/60 text-muted/50"
+                        : d === day
+                          ? "border-fg bg-fg text-bg"
+                          : "border-line text-muted hover:border-line-strong"
+                    }`}
+                  >
+                    <span className="block text-xs opacity-70">{dayLabel(d, { weekday: "short" })}</span>
+                    <span className={`block font-display text-lg font-semibold ${isFull ? "line-through" : ""}`}>{dayLabel(d, { day: "numeric" })}</span>
+                    <span className="block text-[0.65rem] opacity-60">{isFull ? t.full : dayLabel(d, { month: "short" })}</span>
+                  </button>
+                );
+              })}
             </div>
 
             <p className="mt-6 text-sm text-muted">{t.pickTime}</p>
@@ -252,25 +288,47 @@ export function BookingFlow({ locale, t, days, specialties, doctors, initial, sp
                 <p className="flex items-center gap-2 py-8 text-sm text-muted">
                   <Loader2 size={16} className="animate-spin" /> {t.loading}
                 </p>
-              ) : slots.length === 0 ? (
+              ) : slots.length === 0 && times.length === 0 ? (
                 <p className="py-8 text-sm text-muted">{t.noSlots}</p>
               ) : (
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-6">
-                  {slots.map((s) => (
-                    <button
-                      key={s.startsAt + s.doctorId}
-                      type="button"
-                      onClick={() => setSlot(s)}
-                      aria-pressed={slot?.startsAt === s.startsAt}
-                      className={`rounded-lg border py-2.5 font-display text-sm transition-all ${
-                        slot?.startsAt === s.startsAt ? "border-accent bg-accent/10 text-accent" : "border-line hover:border-line-strong"
-                      }`}
-                      dir="ltr"
-                    >
-                      {s.time}
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-6">
+                    {times.map(({ time, slot: s }) =>
+                      s ? (
+                        <button
+                          key={s.startsAt + s.doctorId}
+                          type="button"
+                          onClick={() => setSlot(s)}
+                          aria-pressed={slot?.startsAt === s.startsAt}
+                          className={`rounded-lg border py-2.5 font-display text-sm transition-all ${
+                            slot?.startsAt === s.startsAt ? "border-accent bg-accent/10 text-accent" : "border-line hover:border-line-strong"
+                          }`}
+                          dir="ltr"
+                        >
+                          {time}
+                        </button>
+                      ) : (
+                        <button
+                          key={`taken-${time}`}
+                          type="button"
+                          disabled
+                          title={t.taken}
+                          aria-label={`${time} — ${t.taken}`}
+                          className="cursor-not-allowed rounded-lg border border-dashed border-line/70 py-2.5 font-display text-sm text-muted/45 line-through"
+                          dir="ltr"
+                        >
+                          {time}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                  {slots.length === 0 && <p className="mt-4 text-sm text-muted">{t.noSlots}</p>}
+                  {taken.length > 0 && (
+                    <p className="mt-3 flex items-center gap-2 text-xs text-muted">
+                      <span aria-hidden="true" className="inline-block h-3 w-5 rounded border border-dashed border-line" /> {t.taken}
+                    </p>
+                  )}
+                </>
               )}
             </div>
 

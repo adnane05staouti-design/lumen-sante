@@ -4,6 +4,17 @@ import { db, login } from "./helpers";
 
 /** Automatic accessibility audit (WCAG 2.1 A/AA): no serious or critical problem allowed. */
 async function audit(page: Page) {
+  // wait for the data (widget, slots) and the end of the transitions: never audit a half-drawn state
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a.effect?.getTiming().iterations !== Infinity) // entrance animations only (not loops)
+        .map((a) => a.finished.catch(() => undefined)),
+    ),
+  );
+  await page.waitForTimeout(300);
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
   const serious = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   return serious.map((v) => `${v.id}: ${v.help} → ${v.nodes.map((n) => n.target.join(" ")).slice(0, 3).join(" | ")}`);

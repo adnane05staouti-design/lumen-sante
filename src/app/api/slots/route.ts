@@ -1,7 +1,7 @@
 import { getDaySlots } from "@/lib/availability";
 
 /**
- * GET /api/slots?specialty=dentaire&day=2026-10-02[&doctor=<uuid>] → free times of one day.
+ * GET /api/slots?specialty=dentaire&day=2026-10-02[&doctor=<uuid>] → free times of one day, plus the times already booked (greyed out in the UI).
  * Public and read-only; cached a few seconds (every booking refreshes the cache immediately,
  * and the booking action always re-checks the slot in the database).
  */
@@ -19,10 +19,10 @@ export async function GET(request: Request) {
     return Response.json({ error: "invalid" }, { status: 400 });
   }
   try {
-    const slots = await getDaySlots(slug, day, doctor);
-    if (slots === null) return Response.json({ error: "invalid" }, { status: 400 });
+    const result = await getDaySlots(slug, day, doctor);
+    if (result === null) return Response.json({ error: "invalid" }, { status: 400 });
     return Response.json(
-      { slots },
+      result,
       { headers: { "Cache-Control": "public, max-age=0, s-maxage=10, stale-while-revalidate=30" } },
     );
   } catch (error) {

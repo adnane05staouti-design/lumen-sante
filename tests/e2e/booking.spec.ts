@@ -14,8 +14,15 @@ test.describe("Réservation", () => {
     expect(rows).toHaveLength(1);
     expect(["CONFIRMED", "PENDING"]).toContain(rows[0].status);
     const res = await page.request.get(`/api/slots?specialty=dentaire&day=${slot.day}&doctor=${slot.doctorId}`);
-    const { slots } = await res.json();
+    const { slots, taken } = await res.json();
     expect(slots.map((s: { time: string }) => s.time)).not.toContain(slot.time);
+    expect(taken).toContain(slot.time); // exposed as a booked time (no patient information)
+
+    // the booked time is shown greyed out and cannot be clicked
+    await page.goto(`/fr/rendez-vous?specialty=dentaire&day=${slot.day}&doctor=${slot.doctorId}`);
+    const bookedButton = page.getByRole("button", { name: `${slot.time} — Déjà réservé` });
+    await expect(bookedButton).toBeVisible();
+    await expect(bookedButton).toBeDisabled();
   });
 
   test("annulation par le lien sécurisé", async ({ page }) => {

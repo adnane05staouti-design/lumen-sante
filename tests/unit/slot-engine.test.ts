@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeSlots, isDayBookable, uniqueTimes, type AvailabilityData, type BookingRules } from "@/lib/slot-engine";
+import { computeDay, computeSlots, isDayBookable, takenTimes, uniqueTimes, type AvailabilityData, type BookingRules } from "@/lib/slot-engine";
 import { clinicTimeToUtc } from "@/lib/time";
 
 const rules: BookingRules = { id: 1, autoConfirm: true, minLeadHours: 2, maxDaysAhead: 60, cancelLimitHours: 24, maxActivePerEmail: 3 };
@@ -78,5 +78,30 @@ describe("computeSlots — business rules", () => {
 
   it("rejects a zero or negative duration", () => {
     expect(computeSlots(DAY, 0, { doctors: [doctor("a")], booked: [] }, rules, NOW)).toEqual([]);
+  });
+});
+
+describe("computeDay — booked times shown greyed out", () => {
+  it("lists a booked time as taken, never as free", () => {
+    const booked = [{ doctorId: "a", startsAt: at("09:00"), endsAt: at("09:30") }];
+    const day = computeDay(DAY, 30, { doctors: [doctor("a")], booked }, rules, NOW);
+    expect(day.free.map((s) => s.time)).not.toContain("09:00");
+    expect(takenTimes(day)).toEqual(["09:00"]);
+  });
+
+  it("a time is only taken when no doctor is free at that time", () => {
+    const booked = [{ doctorId: "a", startsAt: at("10:00"), endsAt: at("10:30") }];
+    const both = computeDay(DAY, 30, { doctors: [doctor("a"), doctor("b")], booked }, rules, NOW);
+    expect(takenTimes(both)).toEqual([]); // doctor b is still free at 10:00
+    const all = [...booked, { doctorId: "b", startsAt: at("10:00"), endsAt: at("10:30") }];
+    expect(takenTimes(computeDay(DAY, 30, { doctors: [doctor("a"), doctor("b")], booked: all }, rules, NOW))).toEqual(["10:00"]);
+  });
+
+  it("past times (inside the minimum delay) are neither free nor shown as booked", () => {
+    const now = new Date(at("10:00").getTime() - 3600_000); // 09:00 local → 10:00 is inside the 2 h delay
+    const booked = [{ doctorId: "a", startsAt: at("09:30"), endsAt: at("10:00") }];
+    const day = computeDay(DAY, 30, { doctors: [doctor("a")], booked }, rules, now);
+    expect(takenTimes(day)).toEqual([]);
+    expect(day.free[0].time).toBe("11:00");
   });
 });
