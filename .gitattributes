@@ -1,0 +1,10 @@
+# Same line endings (LF) on Windows, macOS and Linux
+* text=auto eol=lf
+
+# Binary files: never converted
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.woff2 binary
