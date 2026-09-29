@@ -106,6 +106,7 @@ export function ParticleStage() {
     window.addEventListener("pointermove", onPointer, { passive: true });
     window.addEventListener("pointerdown", onDown, { passive: true });
     window.addEventListener("resize", onResize);
+    window.addEventListener("lumen:shape", onScroll); // a component changed its data-shape (e.g. mobile swipe)
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const interactions = ["pointerdown", "touchstart", "keydown", "wheel", "scroll"] as const;
@@ -131,6 +132,7 @@ export function ParticleStage() {
       window.removeEventListener("pointermove", onPointer);
       window.removeEventListener("pointerdown", onDown);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("lumen:shape", onScroll);
       engine?.dispose();
       document.documentElement.classList.remove("fx-3d");
     };
