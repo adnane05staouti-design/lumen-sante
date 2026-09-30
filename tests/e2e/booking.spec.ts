@@ -30,8 +30,15 @@ test.describe("Réservation", () => {
     const email = testEmail("cancel");
     await book(page, slot, email);
     await expect(page.getByText(/LS-[0-9A-F]{6}/)).toBeVisible();
+    // the database only holds the token's fingerprint (never the token itself)
     const { rows } = await db.query("SELECT cancel_token FROM appointments WHERE patient_email = $1", [email]);
+    expect(rows[0].cancel_token).toMatch(/^[0-9a-f]{64}$/);
+    // the real token is only in the patient's e-mail: the test gives the appointment a known one
+    const token = "e2e-known-cancel-token-0123456789";
+    await db.query("UPDATE appointments SET cancel_token = encode(sha256(convert_to($1, 'UTF8')), 'hex') WHERE patient_email = $2", [token, email]);
     await page.goto(`/fr/rendez-vous/annuler/${rows[0].cancel_token}`);
+    await expect(page.getByText(/n'est plus valide/)).toBeVisible(); // the stored fingerprint is not a valid link
+    await page.goto(`/fr/rendez-vous/annuler/${token}`);
     await page.getByRole("button", { name: /Confirmer l'annulation/ }).click();
     await expect(page.getByText(/a été annulé/)).toBeVisible();
     const after = await db.query("SELECT status FROM appointments WHERE patient_email = $1", [email]);

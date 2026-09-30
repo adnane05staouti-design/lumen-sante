@@ -89,6 +89,9 @@ const fr = {
   book: {
     title: "Prendre rendez-vous",
     lead: "Choisissez une spécialité, un créneau, et c'est réservé. Confirmation immédiate par e-mail.",
+    emergency: "Urgence médicale ? Ne réservez pas en ligne : appelez le 15 ou le 141.",
+    reasonHint: "Facultatif. Quelques mots suffisent (ex. « contrôle », « douleur dentaire ») : ne donnez pas de détails médicaux ici.",
+    phoneHint: "Ex. 06 12 34 56 78 — ou +33 6 12 34 56 78 depuis l'étranger",
     steps: ["Spécialité", "Créneau", "Vos informations"],
     anyDoctor: "Premier médecin disponible",
     doctor: "Médecin",
@@ -263,6 +266,9 @@ const en: Dictionary = {
   book: {
     title: "Book an appointment",
     lead: "Pick a specialty and a time slot — it's booked. Instant e-mail confirmation.",
+    emergency: "Medical emergency? Do not book online: call 15 or 141.",
+    reasonHint: "Optional. A few words are enough (e.g. “check-up”, “toothache”): please do not give medical details here.",
+    phoneHint: "E.g. 06 12 34 56 78 — or +33 6 12 34 56 78 from abroad",
     steps: ["Specialty", "Time slot", "Your details"],
     anyDoctor: "First available doctor",
     doctor: "Doctor",
@@ -435,6 +441,9 @@ const ar: Dictionary = {
   book: {
     title: "حجز موعد",
     lead: "اختر التخصص والموعد، ويتم الحجز. تأكيد فوري عبر البريد الإلكتروني.",
+    emergency: "حالة طبية طارئة؟ لا تحجز عبر الإنترنت: اتصل بالرقم 15 أو 141.",
+    reasonHint: "اختياري. تكفي بضع كلمات (مثلاً « فحص »، « ألم في الأسنان »): لا تذكر تفاصيل طبية هنا.",
+    phoneHint: "مثال: 06 12 34 56 78 — أو ‎+33 6 12 34 56 78 من الخارج",
     steps: ["التخصص", "الموعد", "معلوماتك"],
     anyDoctor: "أول طبيب متاح",
     doctor: "الطبيب",

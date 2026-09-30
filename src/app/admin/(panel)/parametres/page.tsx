@@ -1,5 +1,7 @@
 import { desc } from "drizzle-orm";
 import { anonymizeOldAppointments, createUser, resetUserPassword, toggleUser, updateSettings } from "@/app/actions/admin";
+import { resetUserMfa } from "@/app/actions/mfa";
+import { ConfirmButton } from "@/components/admin/ConfirmButton";
 import { db, schema } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { getRules } from "@/lib/slots";
@@ -24,6 +26,11 @@ const ACTION_LABEL: Record<string, string> = {
   "user.enable": "Compte réactivé",
   "user.password": "Mot de passe changé",
   "user.password.reset": "Mot de passe réinitialisé",
+  "login.mfa.failed": "Code 2FA refusé",
+  "user.mfa.enabled": "Double authentification activée",
+  "user.mfa.disabled": "Double authentification désactivée",
+  "user.mfa.codes": "Nouveaux codes de secours",
+  "user.mfa.reset": "Double authentification réinitialisée",
   "data.anonymize": "Anonymisation des données",
   "content.texts": "Textes modifiés",
   "content.identity": "Identité modifiée",
@@ -40,7 +47,10 @@ export default async function SettingsAdmin() {
   const me = await requireUser("ADMIN");
   const [rules, users, logs] = await Promise.all([
     getRules(),
-    db.query.users.findMany({ orderBy: [desc(schema.users.createdAt)] }),
+    db.query.users.findMany({
+      columns: { id: true, name: true, email: true, role: true, active: true, totpEnabled: true },
+      orderBy: [desc(schema.users.createdAt)],
+    }),
     db.query.auditLogs.findMany({ with: { user: true }, orderBy: [desc(schema.auditLogs.createdAt)], limit: 40 }),
   ]);
 
@@ -80,7 +90,8 @@ export default async function SettingsAdmin() {
               <span>
                 {u.name} <span className="text-muted">· {u.email}</span>
                 <span className="block text-xs text-muted">
-                  {u.role === "ADMIN" ? "Administrateur" : "Secrétariat"} {u.active ? "" : "· désactivé"}
+                  {u.role === "ADMIN" ? "Administrateur" : "Secrétariat"} {u.active ? "" : "· désactivé"}{" "}
+                  · {u.totpEnabled ? <span className="text-accent">2FA activée</span> : <span className="text-amber-200">sans 2FA</span>}
                 </span>
               </span>
               {u.id !== me.id && (
@@ -91,6 +102,16 @@ export default async function SettingsAdmin() {
                       <input name="password" type="password" required minLength={12} maxLength={128} autoComplete="new-password" placeholder="12 caractères minimum" className={inputCls} />
                     </ActionForm>
                   </details>
+                  {u.totpEnabled && (
+                    <form action={resetUserMfa.bind(null, u.id)}>
+                      <ConfirmButton
+                        message={`Retirer la double authentification de ${u.name} (téléphone perdu) ? Ses sessions seront fermées ; il pourra la réactiver depuis « Mon compte ».`}
+                        className="rounded-md border border-line px-3 py-1.5 text-xs hover:bg-surface-2"
+                      >
+                        Réinitialiser la 2FA
+                      </ConfirmButton>
+                    </form>
+                  )}
                   <form action={toggleUser.bind(null, u.id)}>
                     <button className="rounded-md border border-line px-3 py-1.5 text-xs hover:bg-surface-2">{u.active ? "Désactiver" : "Réactiver"}</button>
                   </form>

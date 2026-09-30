@@ -14,6 +14,8 @@ import { safeError } from "@/lib/log";
 import { clientKey, isRateLimited } from "@/lib/rate-limit";
 import { AVAILABILITY_TAG, getFreeSlots, getRules } from "@/lib/slots";
 import { clinicDay, formatLong } from "@/lib/time";
+import { normalizePhone } from "@/lib/phone";
+import { hashToken, newCancelToken } from "@/lib/tokens";
 
 /* Free slots are read through the cached GET routes /api/slots and /api/availability. */
 
@@ -28,12 +30,13 @@ const bookingInput = z.object({
   doctorId: z.string().uuid().optional(),
   startsAt: z.string().datetime(),
   name: z.string().trim().min(2).max(80).refine(noLink),
+  // stored in one standard form (+212612345678) so the clinic can always call back
   phone: z
     .string()
-    .trim()
-    .regex(/^\+?[0-9 ().-]{8,20}$/),
+    .max(30)
+    .transform((v, ctx) => normalizePhone(v) ?? (ctx.addIssue({ code: z.ZodIssueCode.custom }), z.NEVER)),
   email: z.string().trim().toLowerCase().email().max(120),
-  reason: z.string().trim().max(500).refine(noLink).optional().default(""),
+  reason: z.string().trim().max(200).refine(noLink).optional().default(""),
   consent: z.boolean().refine((v) => v === true),
   website: z.string().max(0).optional(), // honeypot: must stay empty
 });
@@ -75,7 +78,8 @@ export async function createAppointment(input: z.input<typeof bookingInput>): Pr
   if (candidates.length === 0) return { ok: false, error: "taken" };
 
   const status = rules.autoConfirm ? "CONFIRMED" : "PENDING";
-  const cancelToken = randomBytes(24).toString("base64url");
+  // the patient gets the token by e-mail; the database only keeps its fingerprint
+  const cancelToken = newCancelToken();
 
   // Try each available doctor. The database refuses a concurrent double booking:
   // unique index (same start, 23505) and exclusion constraint (overlapping times, 23P01).
@@ -108,7 +112,7 @@ export async function createAppointment(input: z.input<typeof bookingInput>): Pr
           patientEmail: data.email,
           reason: data.reason,
           locale,
-          cancelToken,
+          cancelToken: hashToken(cancelToken),
         });
       });
     } catch (error) {
@@ -196,7 +200,7 @@ async function notifyClinic(p: {
 export async function cancelByToken(token: string): Promise<{ ok: boolean; error?: "notfound" | "late" | "done" }> {
   if (typeof token !== "string" || !/^[A-Za-z0-9_-]{20,64}$/.test(token)) return { ok: false, error: "notfound" };
   if (await isRateLimited(`cancel:${await clientKey()}`, 20, 3600)) return { ok: false, error: "notfound" };
-  const appt = await db.query.appointments.findFirst({ where: eq(schema.appointments.cancelToken, token) });
+  const appt = await db.query.appointments.findFirst({ where: eq(schema.appointments.cancelToken, hashToken(token)) });
   if (!appt) return { ok: false, error: "notfound" };
   if (appt.status !== "PENDING" && appt.status !== "CONFIRMED") return { ok: false, error: "done" };
   const rules = await getRules();

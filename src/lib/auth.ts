@@ -10,7 +10,19 @@ import { db, schema } from "@/db";
 export const SESSION_COOKIE = "lumen_session";
 const SESSION_HOURS = 8;
 
-export type SessionUser = { id: string; name: string; email: string; role: "ADMIN" | "STAFF"; sessionVersion: number };
+export type SessionUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: "ADMIN" | "STAFF";
+  sessionVersion: number;
+  /** two-factor authentication enabled */
+  mfa: boolean;
+};
+
+/** Short-lived cookie between "password OK" and "6-digit code OK" (2FA). */
+const MFA_COOKIE = "lumen_mfa";
+const MFA_MINUTES = 5;
 
 function secret() {
   const value = process.env.AUTH_SECRET;
@@ -28,7 +40,43 @@ export async function verifyCredentials(email: string, password: string): Promis
   const hash = user?.passwordHash ?? "$2b$12$D2ekwBxhpK9UYFONxbbGFe8gpC783xYj1zIz33CqJhzLDv8CiR4Aq";
   const ok = await bcrypt.compare(password, hash);
   if (!user || !ok || !user.active) return null;
-  return { id: user.id, name: user.name, email: user.email, role: user.role, sessionVersion: user.sessionVersion };
+  return { id: user.id, name: user.name, email: user.email, role: user.role, sessionVersion: user.sessionVersion, mfa: user.totpEnabled };
+}
+
+/** Password accepted, second factor still required: remembers who is logging in, for 5 minutes. */
+export async function createMfaChallenge(user: SessionUser) {
+  const token = await new SignJWT({ purpose: "mfa", sv: user.sessionVersion })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(user.id)
+    .setIssuedAt()
+    .setExpirationTime(`${MFA_MINUTES}m`)
+    .sign(secret());
+  (await cookies()).set(MFA_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/admin",
+    maxAge: MFA_MINUTES * 60,
+  });
+}
+
+/** The user waiting for their second factor, or null (expired, tampered, account changed). */
+export async function readMfaChallenge() {
+  const token = (await cookies()).get(MFA_COOKIE)?.value;
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, secret(), { algorithms: ["HS256"] });
+    if (payload.purpose !== "mfa" || !payload.sub) return null;
+    const user = await db.query.users.findFirst({ where: eq(schema.users.id, payload.sub) });
+    if (!user || !user.active || !user.totpEnabled || payload.sv !== user.sessionVersion) return null;
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearMfaChallenge() {
+  (await cookies()).delete({ name: MFA_COOKIE, path: "/admin" });
 }
 
 export async function createSession(user: SessionUser) {
@@ -72,10 +120,10 @@ export const getSession = cache(async function getSession(): Promise<SessionUser
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret(), { algorithms: ["HS256"] });
-    if (!payload.sub) return null;
+    if (!payload.sub || payload.purpose) return null; // a 2FA challenge token is never a session
     const user = await db.query.users.findFirst({ where: eq(schema.users.id, payload.sub) });
     if (!user || !user.active || payload.sv !== user.sessionVersion) return null;
-    return { id: user.id, name: user.name, email: user.email, role: user.role, sessionVersion: user.sessionVersion };
+    return { id: user.id, name: user.name, email: user.email, role: user.role, sessionVersion: user.sessionVersion, mfa: user.totpEnabled };
   } catch {
     return null;
   }

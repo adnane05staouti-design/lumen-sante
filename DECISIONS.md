@@ -68,6 +68,11 @@ Statuts : ⬜ à valider · ✅ validé · ✏️ modifié (préciser)
 | S23 | CMS protégé contre la pollution de prototype (`__proto__`, `constructor`…), chemins limités, sauvegarde par section | Un texte piégé ne peut pas casser le serveur | ⬜ |
 | S24 | Connexion TLS vérifiée vers la base en production (Neon) ; tests automatiques refusés sur une base hébergée | Pas d'interception ; pas de données de production effacées par erreur | ⬜ |
 | S25 | Limites connues, assumées : pas de CAPTCHA ; CSP avec `unsafe-inline` (scripts internes de Next.js, sinon toutes les pages deviennent dynamiques) | Compromis vitesse / complexité, à revoir si le site est attaqué | ⬜ |
+| S26 | Double authentification (code à 6 chiffres, TOTP) pour le personnel, facultative mais rappelée sur le tableau de bord ; secret chiffré en base (AES-256-GCM), un code ne sert qu'une fois, 8 codes de secours à usage unique (empreintes seulement), réinitialisation par un administrateur | Un mot de passe volé ne suffit plus pour lire les données des patients | ⬜ |
+| S27 | Liens d'annulation : seule l'empreinte SHA-256 du jeton est stockée ; le lien ne marche que pour un rendez-vous à venir et une seule fois | Une fuite de la base ne permet pas d'annuler des rendez-vous | ⬜ |
+| S28 | Téléphone validé et enregistré au format international (+212…) | Rappels et appels sans erreur de numéro | ⬜ |
+| S29 | Motif limité à 200 caractères avec consigne « pas de détails médicaux » ; jamais dans les e-mails ni les journaux | Minimisation des données de santé (loi 09-08) | ⬜ |
+| S30 | Message « Urgence : appelez le 15 ou le 141 » sur la page de réservation | La réservation en ligne ne doit jamais retarder une urgence | ⬜ |
 | S16 | Images envoyées : 4 Mo max, type vérifié, image réellement décodée (sharp), redimensionnée et ré-encodée (métadonnées GPS supprimées), SVG converti en PNG ; textes limités en longueur, caractères de contrôle retirés ; réservé au rôle ADMIN et journalisé | Un fichier piégé ou un texte malveillant ne peut pas passer | ⬜ |
 
 ## 4. Choix techniques

@@ -40,6 +40,12 @@ test.describe("Pages publiques", () => {
     expect(res?.status()).toBe(404);
     await expect(page.getByText("404")).toBeVisible();
     await expect(page.getByRole("heading", { level: 1 })).toContainText("الصفحة غير موجودة");
+    await expect(page).toHaveTitle(/الصفحة غير موجودة/); // browser tab translated too
+  });
+
+  test("la page de réservation rappelle les numéros d'urgence", async ({ page }) => {
+    await page.goto("/fr/rendez-vous");
+    await expect(page.getByRole("note")).toContainText("141");
   });
 
   test("le consentement renvoie vers la politique de confidentialité", async ({ page }) => {
@@ -99,8 +105,10 @@ test.describe("API de disponibilités", () => {
     expect(Array.isArray(body.days)).toBe(true);
   });
   test("spécialité inconnue", async ({ request }) => {
-    const res = await request.get("/api/availability?specialty=inconnue");
-    expect((await res.json()).days).toEqual([]);
+    for (const url of ["/api/availability?specialty=inconnue", "/api/slots?specialty=inconnue&day=2030-01-07"]) {
+      const res = await request.get(url);
+      expect(res.status(), url).toBe(404);
+    }
   });
 });
 

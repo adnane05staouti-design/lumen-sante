@@ -7,6 +7,7 @@ import { db, schema } from "@/db";
 import { getPageData } from "@/lib/content";
 import { hasLocale } from "@/lib/i18n";
 import { formatLong } from "@/lib/time";
+import { hashToken } from "@/lib/tokens";
 import { Navbar } from "@/components/layout/Navbar";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export default async function CancelPage({ params, searchParams }: PageProps<"/[
 
   const appt = /^[A-Za-z0-9_-]{20,64}$/.test(token)
     ? await db.query.appointments.findFirst({
-        where: eq(schema.appointments.cancelToken, token),
+        where: eq(schema.appointments.cancelToken, hashToken(token)),
         with: { doctor: true, specialty: true },
       })
     : undefined;

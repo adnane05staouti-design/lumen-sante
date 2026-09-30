@@ -33,6 +33,13 @@ export const users = pgTable("users", {
   active: boolean("active").notNull().default(true),
   /** incremented on logout / password change / deactivation: every older session becomes invalid */
   sessionVersion: integer("session_version").notNull().default(0),
+  /** two-factor authentication: TOTP secret encrypted with AES-256-GCM (null = not set up) */
+  totpSecret: text("totp_secret"),
+  totpEnabled: boolean("totp_enabled").notNull().default(false),
+  /** last accepted 30-second window: the same code can never be used twice */
+  totpLastStep: integer("totp_last_step").notNull().default(0),
+  /** SHA-256 of the unused recovery codes */
+  recoveryCodes: jsonb("recovery_codes").$type<string[]>().notNull().default([]),
   createdAt: createdAt(),
 });
 
@@ -114,6 +121,7 @@ export const appointments = pgTable(
     patientEmail: text("patient_email").notNull(),
     reason: text("reason").notNull().default(""),
     locale: text("locale").notNull().default("fr"),
+    /** SHA-256 of the cancellation token sent by e-mail (the token itself is never stored) */
     cancelToken: text("cancel_token").notNull().unique(),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

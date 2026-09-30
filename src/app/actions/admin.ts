@@ -5,7 +5,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db, schema } from "@/db";
-import { audit, bumpSessionVersion, createSession, destroySession, hashPassword, requireUser, verifyCredentials } from "@/lib/auth";
+import { audit, bumpSessionVersion, createMfaChallenge, createSession, destroySession, hashPassword, requireUser, verifyCredentials } from "@/lib/auth";
 import { CATALOG_TAG } from "@/lib/availability";
 import { clientKey, isRateLimited } from "@/lib/rate-limit";
 import { AVAILABILITY_TAG, SETTINGS_TAG } from "@/lib/slots";
@@ -16,7 +16,8 @@ function refreshAvailability(catalog = false) {
   if (catalog) revalidateTag(CATALOG_TAG, { expire: 0 });
 }
 
-export type FormState = { ok?: boolean; error?: string } | undefined;
+/** `mfa`: password accepted, 6-digit code now required. `codes`: recovery codes shown once. */
+export type FormState = { ok?: boolean; error?: string; mfa?: boolean; codes?: string[] } | undefined;
 
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -44,6 +45,11 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
     // never store what was typed if it is not an e-mail (it could be a password typed in the wrong field)
     await audit(null, "login.failed", /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "(identifiant invalide)");
     return { error: "E-mail ou mot de passe incorrect." };
+  }
+  if (user.mfa) {
+    // second factor: the session is only created once the 6-digit code is checked (actions/mfa.ts)
+    await createMfaChallenge(user);
+    return { mfa: true };
   }
   await createSession(user);
   await audit(user.id, "login.success", "");

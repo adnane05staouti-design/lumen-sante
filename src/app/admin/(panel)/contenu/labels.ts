@@ -22,6 +22,10 @@ export const LABELS: Record<string, string> = {
   "hero.cta": "Bouton principal",
   "hero.cta2": "Bouton secondaire",
   "hero.fast": "Texte sous « < 60 s »",
+  // booking page
+  "book.emergency": "Réservation : message « urgence » (numéros d'urgence)",
+  "book.reasonHint": "Réservation : aide sous le champ motif",
+  "book.phoneHint": "Réservation : exemple de numéro de téléphone",
   // widget
   "booking.title": "Widget : titre",
   "booking.step": "Widget : mot « Étape »",

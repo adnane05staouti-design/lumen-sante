@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { base32Decode, base32Encode, currentStep, totpCode } from "../../src/lib/totp";
 import { book, cleanup, db, freeSlot, login, testEmail } from "./helpers";
 
 test.beforeAll(cleanup);
@@ -83,6 +84,82 @@ test.describe("Espace cabinet : accès", () => {
       await Promise.all([page.waitForResponse((r) => r.request().method() === "POST"), page.locator("form button").first().click()]);
     }
     await expect(page.getByText(/Trop de tentatives/)).toBeVisible();
+  });
+});
+
+test.describe("Double authentification (2FA)", () => {
+  test("activation, codes de secours, connexion en 2 étapes, code refusé, réinitialisation par l'admin", async ({ page, browser }) => {
+    await db.query("DELETE FROM rate_limits WHERE key LIKE 'login:%' OR key LIKE 'mfa%'");
+    // a dedicated account (the main administrator is never modified by the tests)
+    await login(page);
+    const email = testEmail("mfa");
+    const password = "Double-Auth#2026-e2e";
+    await page.goto("/admin/parametres");
+    await page.fill("form:has(select[name=role]) input[name=name]", "Compte 2FA E2E");
+    await page.fill("form:has(select[name=role]) input[name=email]", email);
+    await page.fill("form:has(select[name=role]) input[name=password]", password);
+    await page.getByRole("button", { name: "Créer le compte" }).click();
+    await expect(page.getByText("Compte créé.")).toBeVisible();
+
+    const user = await (await browser.newContext()).newPage();
+    await login(user, email, password);
+    await expect(user.getByText(/activez la double authentification/)).toBeVisible();
+    await user.goto("/admin/compte");
+    await user.getByRole("button", { name: "Activer la double authentification" }).click();
+    await expect(user.getByAltText(/QR code/)).toBeVisible();
+    const key = (await user.locator("p.font-mono").textContent())!.replace(/\s/g, "");
+    const secret = base32Encode(base32Decode(key));
+
+    await user.fill("input[name=code]", "000000");
+    await user.getByRole("button", { name: "Activer" }).click();
+    await expect(user.getByText(/Code incorrect/)).toBeVisible();
+    await user.fill("input[name=code]", totpCode(secret, currentStep()));
+    await user.getByRole("button", { name: "Activer" }).click();
+    await expect(user.getByText("Double authentification activée.")).toBeVisible();
+    const codes = (await user.locator("ul.font-mono li").allTextContents()).map((c) => c.trim());
+    expect(codes).toHaveLength(8);
+
+    const row = await db.query("SELECT totp_secret, totp_enabled, recovery_codes FROM users WHERE email = $1", [email]);
+    expect(row.rows[0].totp_enabled).toBe(true);
+    expect(row.rows[0].totp_secret).not.toContain(secret); // stored encrypted
+    expect(JSON.stringify(row.rows[0].recovery_codes)).not.toContain(codes[0]); // only fingerprints
+
+    // login: the password alone is no longer enough
+    const again = await (await browser.newContext()).newPage();
+    await again.goto("/admin/login");
+    await again.fill("input[name=email]", email);
+    await again.fill("input[name=password]", password);
+    await again.locator("form button").first().click();
+    await expect(again.getByText(/Code à 6 chiffres/)).toBeVisible();
+    await again.goto("/admin");
+    await expect(again).toHaveURL(/\/admin\/login$/); // no session before the code
+    await again.fill("input[name=email]", email);
+    await again.fill("input[name=password]", password);
+    await again.locator("form button").first().click();
+    await again.fill("input[name=code]", "123456");
+    await again.getByRole("button", { name: "Vérifier" }).click();
+    await expect(again.getByText("Code incorrect.")).toBeVisible();
+    await again.fill("input[name=code]", codes[0]); // recovery code
+    await again.getByRole("button", { name: "Vérifier" }).click();
+    await expect(again).toHaveURL(/\/admin$/);
+
+    // a recovery code only works once
+    const third = await (await browser.newContext()).newPage();
+    await third.goto("/admin/login");
+    await third.fill("input[name=email]", email);
+    await third.fill("input[name=password]", password);
+    await third.locator("form button").first().click();
+    await third.fill("input[name=code]", codes[0]);
+    await third.getByRole("button", { name: "Vérifier" }).click();
+    await expect(third.getByText("Code incorrect.")).toBeVisible();
+
+    // lost phone: the administrator resets the 2FA; the user's sessions are closed
+    await page.goto("/admin/parametres");
+    page.once("dialog", (d) => d.accept());
+    await page.locator("li", { hasText: email }).getByRole("button", { name: "Réinitialiser la 2FA" }).click();
+    await expect(page.locator("li", { hasText: email }).first()).toContainText("sans 2FA"); // first match: the accounts list
+    await again.goto("/admin");
+    await expect(again).toHaveURL(/\/admin\/login$/);
   });
 });
 

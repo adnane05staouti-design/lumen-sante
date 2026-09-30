@@ -41,6 +41,14 @@ export default async function Dashboard() {
   return (
     <>
       <PageTitle title={`Bonjour ${user.name.split(" ")[0]}`} lead="Voici l'activité du cabinet." />
+      {!user.mfa && (
+        <p role="note" className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
+          Protégez l&apos;accès aux données des patients : activez la double authentification.
+          <Link href="/admin/compte" className="font-semibold underline underline-offset-4">
+            Activer maintenant
+          </Link>
+        </p>
+      )}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((s) => (
           <Card key={s.label}>

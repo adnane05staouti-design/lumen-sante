@@ -70,7 +70,7 @@ npm run dev                   # http://localhost:3000
 | `DATABASE_URL` | Connexion PostgreSQL. Sur Neon : l'URL **poolée** (`-pooler` dans l'hôte, `?sslmode=require`) |
 | `DATABASE_URL_UNPOOLED` | Optionnel : URL directe Neon, utilisée seulement par les migrations |
 | `DB_POOL_MAX` | Optionnel : connexions par instance serveur (3 par défaut, adapté au serverless) |
-| `AUTH_SECRET` | Clé de signature des sessions, 32 caractères minimum |
+| `AUTH_SECRET` | Clé de signature des sessions et de chiffrement des secrets 2FA, 32 caractères minimum. La changer déconnecte tout le monde et oblige à réactiver la double authentification |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` | Premier administrateur créé par le seed (mot de passe ≥ 12 caractères) |
 | `SEED_DEMO` | `false` pour ne pas créer les médecins de démonstration |
 | `NEXT_PUBLIC_SITE_URL` | URL publique (liens des e-mails, sitemap) |
@@ -144,4 +144,5 @@ DECISIONS.md              règles métier et choix techniques
 
 - [Diagrammes](docs/diagrams.md) : cas d'utilisation, modèle de données, séquence de réservation, déploiement, architecture
 - [Rapport de recette](docs/rapport-qa.md) : tests, charge, anomalies corrigées, limites connues
+- [Réponse aux audits externes](docs/reponse-audits.md) : chaque remarque, ce qui a été corrigé, ce qui reste à faire avant un vrai client
 - [DECISIONS.md](DECISIONS.md) : chaque règle métier et chaque choix technique, avec sa justification

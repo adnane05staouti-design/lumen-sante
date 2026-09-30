@@ -381,16 +381,32 @@ export function BookingFlow({ locale, t, days, specialties, doctors, initial, sp
                     maxLength={name === "email" ? 120 : 80}
                     dir={name === "name" ? undefined : "ltr"}
                     aria-invalid={fieldError(name) || undefined}
+                    aria-describedby={name === "phone" ? "phone-hint" : undefined}
+                    inputMode={name === "phone" ? "tel" : undefined}
                     className={`mt-2 w-full rounded-xl border bg-bg-2 px-4 py-3 outline-none transition-colors focus:border-accent ${
                       fieldError(name) ? "border-red-400/70" : "border-line"
                     }`}
                   />
+                  {name === "phone" && !fieldError(name) && (
+                    <span id="phone-hint" className="mt-1 block text-xs text-subtle">
+                      {t.phoneHint}
+                    </span>
+                  )}
                   {fieldError(name) && <span className="mt-1 block text-xs text-red-300">{t.fields[name]}</span>}
                 </label>
               ))}
               <label className="block">
                 <span className="text-sm text-muted">{t.reason}</span>
-                <textarea name="reason" rows={3} maxLength={500} className="mt-2 w-full rounded-xl border border-line bg-bg-2 px-4 py-3 outline-none focus:border-accent" />
+                <textarea
+                  name="reason"
+                  rows={2}
+                  maxLength={200}
+                  aria-describedby="reason-hint"
+                  className="mt-2 w-full rounded-xl border border-line bg-bg-2 px-4 py-3 outline-none focus:border-accent"
+                />
+                <span id="reason-hint" className="mt-1 block text-xs text-subtle">
+                  {t.reasonHint}
+                </span>
               </label>
               {/* honeypot — hidden from humans */}
               <input type="text" name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true" />

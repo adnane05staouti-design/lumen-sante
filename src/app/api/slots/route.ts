@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   }
   try {
     const result = await getDaySlots(slug, day, doctor);
-    if (result === null) return Response.json({ error: "invalid" }, { status: 400 });
+    if (result === null) return Response.json({ error: "unknown specialty" }, { status: 404 });
     return Response.json(
       result,
       { headers: { "Cache-Control": "public, max-age=0, s-maxage=10, stale-while-revalidate=30" } },
