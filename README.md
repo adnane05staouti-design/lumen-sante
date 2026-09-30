@@ -6,19 +6,12 @@ psychiatre, centre pluridisciplinaire…) depuis un seul fichier : `src/config/c
 
 > Marque fictive, site de démonstration. Les médecins du jeu de données sont inventés.
 
-## Méthode de travail
-
-Projet piloté par **Adnane Staouti** : cahier des charges, architecture, choix techniques, règles métier,
-scénarios de test et déploiement. Le code a été écrit par une IA (Claude, d'Anthropic) à partir de ses
-instructions, puis testé en local (tests unitaires et de bout en bout, voir le [rapport de recette](docs/rapport-qa.md)).
-Chaque règle et chaque choix sont listés et justifiés dans [DECISIONS.md](DECISIONS.md), avec leur statut de validation.
-
 ![Architecture](docs/diagrams/05-architecture.png)
 
 ## Fonctionnalités
 
 **Site public (FR / AR en RTL / EN)**
-- Accueil premium : intro animée, curseur personnalisé, boutons magnétiques, titres révélés au scroll
+- Accueil premium : intro animée, 3D en particules, boutons magnétiques, titres révélés au scroll
 - 3D de particules qui suit le scroll : sphère → dent, œil, cerveau, peau, ourson, cœur (une forme par spécialité) → ADN
 - Spécialités épinglées au scroll, galerie photo horizontale avec parallaxe, compteurs animés, bandeaux défilants
 - Photos dans `public/images` (provisoires : voir `public/images/README.md`)
