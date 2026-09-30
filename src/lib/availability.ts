@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 import { db, schema } from "@/db";
-import { computeDay, takenTimes, uniqueTimes, type Slot } from "./slot-engine";
+import { computeDay, isDayBookable, takenTimes, uniqueTimes, type Slot } from "./slot-engine";
 import { AVAILABILITY_TAG, getRules, loadAvailability } from "./slots";
 import { addDays, clinicDay, weekdayOf } from "./time";
 
@@ -73,6 +73,8 @@ export const getDaySlots = unstable_cache(
     const specialty = await getSpecialtyBySlug(slug);
     if (!specialty) return null;
     const rules = await getRules();
+    // outside the booking window (past, or too far ahead): answered without reading the appointments
+    if (!isDayBookable(day, rules)) return { slots: [], taken: [] };
     const data = await loadAvailability({ specialtyId: specialty.id, fromDay: day, toDay: day, doctorId: doctorId ?? undefined });
     const result = computeDay(day, specialty.durationMin, data, rules);
     // only times are exposed for booked slots: never who booked them

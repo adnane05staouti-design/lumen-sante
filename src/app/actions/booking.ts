@@ -45,12 +45,25 @@ export type BookingResult =
   | { ok: true; reference: string; startsAt: string; doctor: string; status: "PENDING" | "CONFIRMED" }
   | { ok: false; error: "invalid" | "rate" | "taken" | "limit" | "server"; fields?: string[] };
 
-const referenceOf = () => `LS-${randomBytes(3).toString("hex").toUpperCase()}`;
+/** 8 characters without ambiguous letters (0/O, 1/I): ~40 bits, easy to read over the phone. */
+const REF_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+const referenceOf = () => `LS-${[...randomBytes(8)].map((b) => REF_ALPHABET[b % 32]).join("")}`;
 
 class LimitReached extends Error {}
 const pgCode = (e: unknown) => (e as { code?: string }).code ?? (e as { cause?: { code?: string } }).cause?.code;
+const pgConstraint = (e: unknown) => (e as { constraint?: string }).constraint ?? (e as { cause?: { constraint?: string } }).cause?.constraint;
 
 export async function createAppointment(input: z.input<typeof bookingInput>): Promise<BookingResult> {
+  try {
+    return await book(input);
+  } catch (error) {
+    // database or network problem before the insertion: a clear message, never a crash
+    console.error("[booking] failed:", safeError(error));
+    return { ok: false, error: "server" };
+  }
+}
+
+async function book(input: z.input<typeof bookingInput>): Promise<BookingResult> {
   const parsed = bookingInput.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: "invalid", fields: [...new Set(parsed.error.issues.map((i) => String(i.path[0])))] };
@@ -83,7 +96,8 @@ export async function createAppointment(input: z.input<typeof bookingInput>): Pr
 
   // Try each available doctor. The database refuses a concurrent double booking:
   // unique index (same start, 23505) and exclusion constraint (overlapping times, 23P01).
-  for (const slot of candidates) {
+  for (let i = 0; i < candidates.length; i++) {
+    const slot = candidates[i];
     const reference = referenceOf();
     try {
       await db.transaction(async (tx) => {
@@ -117,7 +131,12 @@ export async function createAppointment(input: z.input<typeof bookingInput>): Pr
       });
     } catch (error) {
       if (error instanceof LimitReached) return { ok: false, error: "limit" };
-      if (pgCode(error) === "23505" || pgCode(error) === "23P01") continue;
+      // (very unlikely) two bookings drew the same reference: same doctor tried again with a new one
+      if (pgCode(error) === "23505" && pgConstraint(error)?.includes("reference")) {
+        i--;
+        continue;
+      }
+      if (pgCode(error) === "23505" || pgCode(error) === "23P01") continue; // slot taken meanwhile: next doctor
       console.error("[booking] insert failed:", safeError(error));
       return { ok: false, error: "server" };
     }
@@ -205,10 +224,12 @@ export async function cancelByToken(token: string): Promise<{ ok: boolean; error
   if (appt.status !== "PENDING" && appt.status !== "CONFIRMED") return { ok: false, error: "done" };
   const rules = await getRules();
   if (appt.startsAt.getTime() - Date.now() < rules.cancelLimitHours * 3600_000) return { ok: false, error: "late" };
-  await db
+  const [cancelled] = await db
     .update(schema.appointments)
     .set({ status: "CANCELLED", updatedAt: new Date() })
-    .where(and(eq(schema.appointments.id, appt.id), inArray(schema.appointments.status, ["PENDING", "CONFIRMED"])));
+    .where(and(eq(schema.appointments.id, appt.id), inArray(schema.appointments.status, ["PENDING", "CONFIRMED"])))
+    .returning({ id: schema.appointments.id });
+  if (!cancelled) return { ok: false, error: "done" }; // already cancelled at the same moment
   revalidateTag(AVAILABILITY_TAG, { expire: 0 });
   return { ok: true };
 }

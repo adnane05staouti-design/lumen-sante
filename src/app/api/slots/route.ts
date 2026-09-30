@@ -1,4 +1,5 @@
 import { getDaySlots } from "@/lib/availability";
+import { isValidDay } from "@/lib/time";
 
 /**
  * GET /api/slots?specialty=dentaire&day=2026-10-02[&doctor=<uuid>] → free times of one day, plus the times already booked (greyed out in the UI).
@@ -12,8 +13,7 @@ export async function GET(request: Request) {
   const doctor = q.get("doctor");
   if (
     !/^[a-z-]{2,40}$/.test(slug) ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(day) ||
-    Number.isNaN(Date.parse(`${day}T00:00:00Z`)) ||
+    !isValidDay(day) || // strict calendar date: 2026-02-30 is refused
     (doctor !== null && !/^[0-9a-f-]{36}$/.test(doctor))
   ) {
     return Response.json({ error: "invalid" }, { status: 400 });

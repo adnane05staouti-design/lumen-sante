@@ -38,6 +38,10 @@ export function BookingFlow({ locale, t, days, specialties, doctors, initial, sp
   const [day, setDay] = useState(days.includes(initial.day ?? "") ? initial.day! : days[0]);
   const [slots, setSlots] = useState<Slot[] | null>(null);
   const [taken, setTaken] = useState<string[]>([]); // times already booked: shown greyed out, not clickable
+  const [loadError, setLoadError] = useState(false); // network / server problem ≠ "no slot"
+  const [reload, setReload] = useState(0);
+  // what the patient typed is kept when going back to change the time (never stored in the browser)
+  const [draft, setDraft] = useState<Record<string, string>>({});
   const [full, setFull] = useState<string[]>([]); // days fully booked (next two weeks)
   const [slot, setSlot] = useState<Slot | null>(null);
   const [loading, startLoading] = useTransition();
@@ -54,9 +58,16 @@ export function BookingFlow({ locale, t, days, specialties, doctors, initial, sp
     startLoading(async () => {
       const res = await fetchSlots({ specialty, doctorId, day });
       if (alive) {
+        setLoadError(Boolean(res.error));
         setSlots(res.slots);
         setTaken(res.taken);
-        setSlot((wantedTime && res.slots.find((x) => x.time === wantedTime)) || null);
+        // keep the chosen time when coming back from the form (if still free), else the one picked on the home page
+        setSlot(
+          (prev) =>
+            (prev && res.slots.find((x) => x.startsAt === prev.startsAt && x.doctorId === prev.doctorId)) ||
+            (wantedTime && res.slots.find((x) => x.time === wantedTime)) ||
+            null,
+        );
         setWantedTime(undefined);
       }
     });
@@ -64,7 +75,7 @@ export function BookingFlow({ locale, t, days, specialties, doctors, initial, sp
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- wantedTime is only read once
-  }, [specialty, doctorId, day, step]);
+  }, [specialty, doctorId, day, step, reload]);
 
   // fully booked days of the chosen specialty (greyed out in the day picker)
   useEffect(() => {
@@ -288,6 +299,13 @@ export function BookingFlow({ locale, t, days, specialties, doctors, initial, sp
                 <p className="flex items-center gap-2 py-8 text-sm text-muted">
                   <Loader2 size={16} className="animate-spin" /> {t.loading}
                 </p>
+              ) : loadError ? (
+                <div role="alert" className="flex flex-wrap items-center gap-3 py-8 text-sm text-amber-200">
+                  {t.loadError}
+                  <button type="button" onClick={() => setReload((n) => n + 1)} className="rounded-lg border border-line px-3 py-1.5 text-fg hover:bg-surface-2">
+                    {t.retry}
+                  </button>
+                </div>
               ) : slots.length === 0 && times.length === 0 ? (
                 <p className="py-8 text-sm text-muted">{t.noSlots}</p>
               ) : (
@@ -381,6 +399,8 @@ export function BookingFlow({ locale, t, days, specialties, doctors, initial, sp
                     maxLength={name === "email" ? 120 : 80}
                     dir={name === "name" ? undefined : "ltr"}
                     aria-invalid={fieldError(name) || undefined}
+                    defaultValue={draft[name]}
+                    onChange={(e) => setDraft((d) => ({ ...d, [name]: e.target.value }))}
                     aria-describedby={name === "phone" ? "phone-hint" : undefined}
                     inputMode={name === "phone" ? "tel" : undefined}
                     className={`mt-2 w-full rounded-xl border bg-bg-2 px-4 py-3 outline-none transition-colors focus:border-accent ${
@@ -399,6 +419,8 @@ export function BookingFlow({ locale, t, days, specialties, doctors, initial, sp
                 <span className="text-sm text-muted">{t.reason}</span>
                 <textarea
                   name="reason"
+                  defaultValue={draft.reason}
+                  onChange={(e) => setDraft((d) => ({ ...d, reason: e.target.value }))}
                   rows={2}
                   maxLength={200}
                   aria-describedby="reason-hint"

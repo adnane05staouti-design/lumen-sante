@@ -97,6 +97,7 @@ async function main() {
   const password = process.env.ADMIN_PASSWORD;
   if (email && password) {
     if (password.length < 12) throw new Error("ADMIN_PASSWORD must be at least 12 characters.");
+    if (Buffer.byteLength(password, "utf8") > 72) throw new Error("ADMIN_PASSWORD must be at most 72 bytes (bcrypt limit).");
     const found = await db.query.users.findFirst({ where: eq(schema.users.email, email) });
     if (!found) {
       await db.insert(schema.users).values({

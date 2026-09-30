@@ -6,7 +6,8 @@ import { cancelByToken } from "@/app/actions/booking";
 import { db, schema } from "@/db";
 import { getPageData } from "@/lib/content";
 import { hasLocale } from "@/lib/i18n";
-import { formatLong } from "@/lib/time";
+import { formatLong, requestTime } from "@/lib/time";
+import { getRules } from "@/lib/slots";
 import { hashToken } from "@/lib/tokens";
 import { Navbar } from "@/components/layout/Navbar";
 
@@ -34,11 +35,14 @@ export default async function CancelPage({ params, searchParams }: PageProps<"/[
     redirect(`/${lang}/rendez-vous/annuler/${token}?done=${res.ok ? "1" : res.error}`);
   }
 
+  // the message always comes from the database, never from the URL (?done=1 alone proves nothing)
+  const active = appt && (appt.status === "PENDING" || appt.status === "CONFIRMED");
+  const tooLate = active && appt.startsAt.getTime() - requestTime() < (await getRules()).cancelLimitHours * 3600_000;
   let message: string | null = null;
-  if (done === "1") message = t.done;
-  else if (done === "late") message = t.late;
-  else if (!appt || done === "notfound") message = t.notfound;
-  else if (appt.status !== "PENDING" && appt.status !== "CONFIRMED") message = t.already;
+  if (!appt) message = t.notfound;
+  else if (appt.status === "CANCELLED") message = done === "1" ? t.done : t.already;
+  else if (!active) message = t.already;
+  else if (tooLate) message = t.late;
 
   return (
     <>

@@ -38,6 +38,10 @@ Statuts : ⬜ à valider · ✅ validé · ✏️ modifié (préciser)
 | R11 | Statuts d'un RDV : en attente, confirmé, annulé, terminé, absent. Passages autorisés : en attente → confirmé/annulé ; confirmé → terminé/absent/annulé ; absent → terminé (patient arrivé en retard). Tout autre changement est refusé par le serveur | — | « Absent » permet de suivre les rendez-vous non honorés ; un RDV terminé ou annulé ne peut pas « revivre » | ⬜ |
 | R12 | Un administrateur ne peut pas désactiver son propre compte | — | Évite de bloquer le cabinet hors de son site | ⬜ |
 | R14 | Recherche d'un patient (nom, téléphone, référence) sur un jour, 7 jours ou toutes les dates | — | L'accueil retrouve l'historique d'un patient au téléphone | ⬜ |
+| R15 | « Terminé » et « Absent » seulement une fois l'heure du rendez-vous passée | — | Un créneau à venir n'est jamais libéré par erreur | ⬜ |
+| R16 | Absence, nouveaux horaires ou médecin masqué qui touchent des rendez-vous déjà pris : refusé avec la liste des rendez-vous concernés, sauf case « Enregistrer quand même » | — | Le cabinet décide et prévient les patients ; rien n'est annulé en silence | ⬜ |
+| R17 | Le patient reçoit un e-mail quand le cabinet confirme ou annule son rendez-vous (nouveau lien d'annulation à la confirmation) | — | Le patient est toujours informé d'une décision le concernant | ⬜ |
+| R18 | Référence de réservation : 8 caractères sans lettres ambiguës (LS-7KQ2M9XA) | 6 caractères hexadécimaux | Lisible au téléphone, collisions quasi impossibles (et réessayées si besoin) | ⬜ |
 | R13 | Le widget de l'accueil affiche les vraies disponibilités (même moteur que la réservation) et le prochain créneau libre ; l'heure choisie est pré-sélectionnée sur la page de réservation | — | Pas de faux créneaux : ce que le patient voit est réservable | ⬜ |
 
 ## 3. Sécurité
@@ -73,6 +77,9 @@ Statuts : ⬜ à valider · ✅ validé · ✏️ modifié (préciser)
 | S28 | Téléphone validé et enregistré au format international (+212…) | Rappels et appels sans erreur de numéro | ⬜ |
 | S29 | Motif limité à 200 caractères avec consigne « pas de détails médicaux » ; jamais dans les e-mails ni les journaux | Minimisation des données de santé (loi 09-08) | ⬜ |
 | S30 | Message « Urgence : appelez le 15 ou le 141 » sur la page de réservation | La réservation en ligne ne doit jamais retarder une urgence | ⬜ |
+| S31 | Limitation de débit IPv6 par réseau /64 calculé sur l'adresse développée (toutes les écritures d'une même adresse comptent ensemble) | Contournement impossible en changeant l'écriture de l'adresse | ⬜ |
+| S32 | Mots de passe limités à 72 octets (limite de bcrypt), mêmes règles partout (création, changement, réinitialisation, seed) | Un mot de passe trop long ne serait pas vérifié en entier | ⬜ |
+| S33 | Page d'annulation : le message vient toujours de la base, jamais de l'adresse (« ?done=1 » ne prouve rien) | Pas de fausse confirmation | ⬜ |
 | S16 | Images envoyées : 4 Mo max, type vérifié, image réellement décodée (sharp), redimensionnée et ré-encodée (métadonnées GPS supprimées), SVG converti en PNG ; textes limités en longueur, caractères de contrôle retirés ; réservé au rôle ADMIN et journalisé | Un fichier piégé ou un texte malveillant ne peut pas passer | ⬜ |
 
 ## 4. Choix techniques

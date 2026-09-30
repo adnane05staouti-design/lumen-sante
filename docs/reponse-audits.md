@@ -28,7 +28,31 @@ Deux agents ont audité le site en ligne **de l'extérieur**, sans accès au cod
 - **Numéros d'urgence** (15 / 141) affichés sur la page de réservation.
 - **API** : spécialité inconnue → 404 (P2-03) ; **page 404** avec titre traduit (P2-04).
 
-Tests après corrections : 36 tests unitaires et 56 tests de bout en bout OK.
+Tests après ces corrections : 36 tests unitaires et 56 tests de bout en bout OK.
+
+## Audit du code source (3e audit) — corrigé le 30/09
+
+| # | Constat | Correction |
+|---|---|---|
+| S01 | Un rendez-vous futur pouvait être marqué « terminé » / « absent » | Refusé côté serveur avant l'heure du rendez-vous ; boutons masqués ; test E2E |
+| S02 | Absence / horaires / médecin masqué sans regard sur les rendez-vous pris | Liste des rendez-vous concernés et refus, sauf confirmation explicite ; test E2E |
+| S03 | Patient non prévenu quand le cabinet confirme ou annule | E-mail au patient (dans sa langue, sans motif médical) |
+| S04 | `?done=1` affichait « annulé » sans vérification | Message calculé depuis la base ; test E2E |
+| S05 | Téléphone sans chiffre accepté | Normalisation +212 / E.164 ; tests unitaires |
+| S06 | bcrypt tronque après 72 octets | Refus au-delà de 72 octets, partout |
+| S07 | Index de photo hors limites | Bornes complètes vérifiées |
+| S08 | Journal / annulation non atomiques | `UPDATE … RETURNING`, journal seulement si la ligne a changé |
+| S09 | Panne réseau affichée comme « aucun créneau » | Message dédié et bouton « Réessayer » ; test E2E |
+| S10 | Saisie perdue en revenant en arrière ; formulaires admin vidés après une erreur | Saisie et créneau conservés ; formulaires admin gardent les valeurs après une erreur ; test E2E |
+| S11 | Référence courte, collision classée « créneau pris » | 8 caractères (~40 bits) et nouvel essai ciblé |
+| S12 | 30 février accepté ; calendrier limité à 45 jours | Dates strictes (400) ; tout l'horizon réglé par le cabinet (jusqu'à 6 mois) |
+| — | Clé IPv6 /64 approximative | Adresse développée puis /64 exact ; tests unitaires |
+| — | Erreurs avant l'insertion non gérées | Toute la réservation protégée : message « erreur, réessayez » au lieu d'un plantage |
+| — | Jours hors fenêtre lus en base | Réponse immédiate sans lecture des rendez-vous |
+
+Tests après corrections : 39 tests unitaires et 61 tests de bout en bout OK.
+
+Non retenu pour une démo (à prévoir pour un vrai client) : file d'envoi d'e-mails durable avec reprises (outbox), contrôle de version des modifications simultanées du CMS, journal des consultations de dossiers, version de la notice de consentement enregistrée avec chaque rendez-vous, anonymisation planifiée automatiquement.
 
 ## Reste à faire avant un vrai client (hors démo)
 

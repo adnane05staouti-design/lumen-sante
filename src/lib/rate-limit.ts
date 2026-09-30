@@ -2,6 +2,7 @@ import "server-only";
 import { lt, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { db, schema } from "@/db";
+import { networkKey } from "./ip";
 
 /**
  * Fixed-window rate limit stored in PostgreSQL, so it works across all serverless instances.
@@ -39,11 +40,7 @@ export async function clientIp(): Promise<string> {
   return (h.get("x-real-ip") || h.get("x-forwarded-for")?.split(",")[0] || "unknown").trim().slice(0, 64);
 }
 
-/** Rate-limit key for the client's network: the full IPv4 address, or the /64 prefix of an IPv6 address
- *  (one IPv6 user owns a whole /64 and could otherwise rotate addresses to bypass the limits). */
+/** Rate-limit key for the client's network (IPv4 address, or IPv6 /64 — see lib/ip.ts). */
 export async function clientKey(): Promise<string> {
-  const ip = await clientIp();
-  if (!ip.includes(":")) return ip;
-  const parts = ip.split("::")[0].split(":");
-  return `${parts.slice(0, 4).join(":")}::/64`;
+  return networkKey(await clientIp());
 }

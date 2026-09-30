@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, type ReactNode } from "react";
+import { startTransition, useActionState, useEffect, useRef, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import type { FormState } from "@/app/actions/admin";
 
@@ -19,8 +19,21 @@ export function ActionForm({
   success?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, undefined);
+  const ref = useRef<HTMLFormElement>(null);
+  // after an error the fields keep what was typed (React would otherwise empty the form); after a success they are reset
+  useEffect(() => {
+    if (state?.ok) ref.current?.reset();
+  }, [state]);
   return (
-    <form action={formAction} className={className}>
+    <form
+      ref={ref}
+      className={className}
+      onSubmit={(e) => {
+        e.preventDefault();
+        const data = new FormData(e.currentTarget);
+        startTransition(() => formAction(data));
+      }}
+    >
       {children}
       <div className="mt-5 flex items-center gap-4">
         <button

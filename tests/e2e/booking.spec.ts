@@ -9,7 +9,7 @@ test.describe("Réservation", () => {
     const slot = await freeSlot(page);
     const email = testEmail("full");
     await book(page, slot, email);
-    await expect(page.getByText(/LS-[0-9A-F]{6}/)).toBeVisible();
+    await expect(page.getByText(/LS-[2-9A-HJ-NP-Z]{8}/)).toBeVisible();
     const { rows } = await db.query("SELECT status, patient_name, cancel_token FROM appointments WHERE patient_email = $1", [email]);
     expect(rows).toHaveLength(1);
     expect(["CONFIRMED", "PENDING"]).toContain(rows[0].status);
@@ -29,7 +29,7 @@ test.describe("Réservation", () => {
     const slot = await freeSlot(page, "dentaire", 1);
     const email = testEmail("cancel");
     await book(page, slot, email);
-    await expect(page.getByText(/LS-[0-9A-F]{6}/)).toBeVisible();
+    await expect(page.getByText(/LS-[2-9A-HJ-NP-Z]{8}/)).toBeVisible();
     // the database only holds the token's fingerprint (never the token itself)
     const { rows } = await db.query("SELECT cancel_token FROM appointments WHERE patient_email = $1", [email]);
     expect(rows[0].cancel_token).toMatch(/^[0-9a-f]{64}$/);
@@ -43,6 +43,42 @@ test.describe("Réservation", () => {
     await expect(page.getByText(/a été annulé/)).toBeVisible();
     const after = await db.query("SELECT status FROM appointments WHERE patient_email = $1", [email]);
     expect(after.rows[0].status).toBe("CANCELLED");
+  });
+
+  test("« ?done=1 » dans l'adresse n'affiche jamais une fausse annulation", async ({ page }) => {
+    const slot = await freeSlot(page, "dentaire", 3);
+    const email = testEmail("fake-done");
+    await book(page, slot, email);
+    await expect(page.getByText(/LS-[2-9A-HJ-NP-Z]{8}/)).toBeVisible();
+    const token = "e2e-fake-done-token-0123456789ab";
+    await db.query("UPDATE appointments SET cancel_token = encode(sha256(convert_to($1, 'UTF8')), 'hex') WHERE patient_email = $2", [token, email]);
+    await page.goto(`/fr/rendez-vous/annuler/${token}?done=1`);
+    await expect(page.getByRole("button", { name: /Confirmer l'annulation/ })).toBeVisible(); // still active
+    await expect(page.getByText(/a été annulé/)).toHaveCount(0);
+    await page.goto("/fr/rendez-vous/annuler/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?done=1");
+    await expect(page.getByText(/n'est plus valide/)).toBeVisible();
+  });
+
+  test("panne réseau : message clair et bouton Réessayer (pas « aucun créneau »)", async ({ page }) => {
+    let fail = true;
+    await page.route("**/api/slots**", (route) => (fail ? route.abort() : route.continue()));
+    await page.goto("/fr/rendez-vous?specialty=dentaire");
+    await expect(page.getByText("Impossible de charger les créneaux")).toBeVisible();
+    fail = false;
+    await page.getByRole("button", { name: "Réessayer" }).click();
+    await expect(page.getByText("Impossible de charger les créneaux")).toHaveCount(0);
+  });
+
+  test("retour en arrière : les informations saisies sont conservées", async ({ page }) => {
+    const slot = await freeSlot(page, "dentaire", 4);
+    await page.goto(`/fr/rendez-vous?specialty=dentaire&day=${slot.day}&time=${slot.time}`);
+    await page.getByRole("button", { name: /Continuer/ }).click();
+    await page.fill("input[name=name]", "Patiente Retour");
+    await page.fill("input[name=phone]", "0612345678");
+    await page.getByRole("button", { name: /Retour/ }).last().click();
+    await page.getByRole("button", { name: /Continuer/ }).click();
+    await expect(page.locator("input[name=name]")).toHaveValue("Patiente Retour");
+    await expect(page.locator("input[name=phone]")).toHaveValue("0612345678");
   });
 
   test("lien d'annulation inventé → refusé", async ({ page }) => {

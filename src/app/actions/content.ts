@@ -217,7 +217,7 @@ export async function moveGalleryPhoto(index: number, direction: -1 | 1) {
   if (direction !== 1 && direction !== -1) return;
   const gallery = [...(await getSite()).gallery];
   const j = index + direction;
-  if (!Number.isInteger(index) || index < 0 || j < 0 || j >= gallery.length) return;
+  if (!Number.isInteger(index) || index < 0 || index >= gallery.length || j < 0 || j >= gallery.length) return;
   [gallery[index], gallery[j]] = [gallery[j], gallery[index]];
   await save("gallery", gallery);
   await audit(user.id, "content.gallery.move", String(index));

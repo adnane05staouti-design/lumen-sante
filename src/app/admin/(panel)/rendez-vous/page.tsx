@@ -3,7 +3,7 @@ import { setAppointmentStatus } from "@/app/actions/admin";
 import { db, schema } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { getSite } from "@/lib/content";
-import { addDays, clinicDay, clinicTime, clinicTimeToUtc } from "@/lib/time";
+import { addDays, clinicDay, clinicTime, clinicTimeToUtc, requestTime } from "@/lib/time";
 import { Card, PageTitle, STATUS_LABEL, StatusBadge } from "@/components/admin/ui";
 import { inputCls } from "@/components/admin/ActionForm";
 
@@ -21,6 +21,7 @@ export default async function AppointmentsPage({ searchParams }: PageProps<"/adm
   const q = str(sp.q).trim().slice(0, 60);
 
   const MAX = 300;
+  const now = requestTime();
   const conds: (SQL | undefined)[] = [
     range ? gte(schema.appointments.startsAt, clinicTimeToUtc(day, "00:00")) : undefined,
     range ? lt(schema.appointments.startsAt, clinicTimeToUtc(addDays(day, range), "00:00")) : undefined,
@@ -118,7 +119,9 @@ export default async function AppointmentsPage({ searchParams }: PageProps<"/adm
                     {(a.status === "PENDING"
                       ? (["CONFIRMED", "CANCELLED"] as const)
                       : a.status === "CONFIRMED"
-                        ? (["COMPLETED", "NO_SHOW", "CANCELLED"] as const)
+                        ? a.startsAt.getTime() <= now
+                          ? (["COMPLETED", "NO_SHOW", "CANCELLED"] as const)
+                          : (["CANCELLED"] as const) // "done" / "no-show" only once the appointment has started
                         : a.status === "NO_SHOW"
                           ? (["COMPLETED"] as const) // patient finally came (late)
                           : []

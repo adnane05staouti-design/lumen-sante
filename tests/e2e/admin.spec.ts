@@ -193,21 +193,57 @@ test.describe("Espace cabinet : fonctions", () => {
     expect(await (await page.request.get("/fr")).text()).not.toContain("Titre de test E2E");
   });
 
-  test("recherche d'un patient sur toutes les dates, confirmation puis absent → venu", async ({ page }) => {
+  test("recherche patient, confirmation, « terminé » interdit avant l'heure, puis absent → venu", async ({ page }) => {
     const slot = await freeSlot(page, "dermatologie", 1);
     await book(page, slot, testEmail("admin-flow"), "dermatologie", "Patient Recherche");
-    const ref = (await page.getByText(/^LS-[0-9A-F]{6}$/).first().textContent())!.trim();
+    const ref = (await page.getByText(/^LS-[2-9A-HJ-NP-Z]{8}$/).first().textContent())!.trim();
 
     await login(page);
     await page.goto(`/admin/rendez-vous?range=all&q=${ref}`);
     const row = page.locator("tr", { hasText: ref });
     await expect(row).toBeVisible();
-    for (const [button, status] of [["Confirmer", "CONFIRMED"], ["Absent", "NO_SHOW"], ["Terminé", "COMPLETED"]] as const) {
+    const current = await db.query("SELECT status FROM appointments WHERE reference = $1", [ref]);
+    if (current.rows[0].status === "PENDING") {
+      await row.getByRole("button", { name: "Confirmer" }).click();
+      await expect.poll(async () => (await db.query("SELECT status FROM appointments WHERE reference = $1", [ref])).rows[0].status).toBe("CONFIRMED");
+    }
+    // future appointment: cannot be marked done / no-show (the slot would be freed by mistake)
+    await page.reload();
+    await expect(row.getByRole("button", { name: "Terminé" })).toHaveCount(0);
+    await expect(row.getByRole("button", { name: "Absent" })).toHaveCount(0);
+
+    // the appointment time has passed (moved to a past date for the test)
+    await db.query(
+      "UPDATE appointments SET starts_at = starts_at - interval '400 days', ends_at = ends_at - interval '400 days' WHERE reference = $1",
+      [ref],
+    );
+    await page.reload();
+    for (const [button, status] of [["Absent", "NO_SHOW"], ["Terminé", "COMPLETED"]] as const) {
       const current = await db.query("SELECT status FROM appointments WHERE reference = $1", [ref]);
       if (current.rows[0].status === status) continue; // already there (auto-confirmation enabled)
       await row.getByRole("button", { name: button }).click();
       await expect.poll(async () => (await db.query("SELECT status FROM appointments WHERE reference = $1", [ref])).rows[0].status).toBe(status);
     }
+  });
+
+  test("une absence sur des rendez-vous déjà pris est signalée, pas appliquée en silence", async ({ page }) => {
+    const slot = await freeSlot(page, "ophtalmologie", 2);
+    await book(page, slot, testEmail("absence"), "ophtalmologie", "Patient Absence");
+    await expect(page.getByText(/LS-[2-9A-HJ-NP-Z]{8}/)).toBeVisible();
+    const { rows } = await db.query("SELECT doctor_id FROM appointments WHERE patient_name = 'Patient Absence' ORDER BY created_at DESC LIMIT 1");
+    await login(page);
+    await page.goto(`/admin/medecins/${rows[0].doctor_id}`);
+    const form = page.locator("form:has(input[name=startsOn])");
+    await form.locator("input[name=startsOn]").fill(slot.day);
+    await form.locator("input[name=endsOn]").fill(slot.day);
+    await form.getByRole("button", { name: "Ajouter l'absence" }).click();
+    await expect(form.getByRole("alert")).toContainText("rendez-vous déjà pris pendant cette absence");
+    const none = await db.query("SELECT count(*)::int AS n FROM absences WHERE doctor_id = $1 AND starts_on = $2", [rows[0].doctor_id, slot.day]);
+    expect(none.rows[0].n).toBe(0);
+    await form.locator("input[name=force]").check();
+    await form.getByRole("button", { name: "Ajouter l'absence" }).click();
+    await expect(form.getByText("Enregistré.")).toBeVisible();
+    await db.query("DELETE FROM absences WHERE doctor_id = $1 AND starts_on = $2", [rows[0].doctor_id, slot.day]);
   });
 
   test("horaires qui se chevauchent refusés", async ({ page }) => {

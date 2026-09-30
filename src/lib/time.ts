@@ -71,3 +71,13 @@ export function formatLong(at: Date, locale: "fr" | "en" | "ar"): string {
     hourCycle: "h23",
   }).format(at);
 }
+
+/** "2026-02-30" is refused (JavaScript would silently turn it into 2 March). */
+export function isValidDay(day: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const d = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === day;
+}
+
+/** Current time for server components (each request renders once: this is the request time). */
+export const requestTime = () => Date.now();

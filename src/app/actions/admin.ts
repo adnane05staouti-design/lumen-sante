@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -9,6 +9,8 @@ import { audit, bumpSessionVersion, createMfaChallenge, createSession, destroySe
 import { CATALOG_TAG } from "@/lib/availability";
 import { clientKey, isRateLimited } from "@/lib/rate-limit";
 import { AVAILABILITY_TAG, SETTINGS_TAG } from "@/lib/slots";
+import { addDays, clinicDay, clinicTime, clinicTimeToUtc, isValidDay, toMinutes, weekdayOf } from "@/lib/time";
+import { notifyStatusChange } from "@/lib/notify";
 
 /** Public pages and cached availability must reflect admin changes at once. */
 function refreshAvailability(catalog = false) {
@@ -17,10 +19,10 @@ function refreshAvailability(catalog = false) {
 }
 
 /** `mfa`: password accepted, 6-digit code now required. `codes`: recovery codes shown once. */
-export type FormState = { ok?: boolean; error?: string; mfa?: boolean; codes?: string[] } | undefined;
+export type FormState = { ok?: boolean; error?: string; mfa?: boolean; codes?: string[]; conflict?: boolean } | undefined;
 
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
-const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const isoDay = z.string().refine(isValidDay);
 
 /* ------------------------------------------------------------------ auth */
 
@@ -65,6 +67,9 @@ export async function logout() {
 
 const STATUSES = ["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED", "NO_SHOW"] as const;
 
+/** "Completed" and "no-show" only make sense once the appointment has started. */
+const AFTER_START = new Set(["COMPLETED", "NO_SHOW"]);
+
 /** Allowed status changes (a cancelled or finished appointment is never re-opened). */
 const TRANSITIONS: Record<string, readonly string[]> = {
   PENDING: ["CONFIRMED", "CANCELLED"],
@@ -77,15 +82,49 @@ const TRANSITIONS: Record<string, readonly string[]> = {
 export async function setAppointmentStatus(id: string, status: (typeof STATUSES)[number]) {
   const user = await requireUser();
   if (!z.string().uuid().safeParse(id).success || !STATUSES.includes(status)) return;
-  const appt = await db.query.appointments.findFirst({ where: eq(schema.appointments.id, id), columns: { status: true } });
+  const appt = await db.query.appointments.findFirst({ where: eq(schema.appointments.id, id), columns: { status: true, startsAt: true } });
   if (!appt || !TRANSITIONS[appt.status]?.includes(status)) return;
-  await db
+  if (AFTER_START.has(status) && appt.startsAt.getTime() > Date.now()) return; // a future slot is never freed by mistake
+  // conditional update: if someone else changed it at the same moment, nothing happens and nothing is logged
+  const [changed] = await db
     .update(schema.appointments)
     .set({ status, updatedAt: new Date() })
-    .where(and(eq(schema.appointments.id, id), eq(schema.appointments.status, appt.status)));
+    .where(and(eq(schema.appointments.id, id), eq(schema.appointments.status, appt.status)))
+    .returning({ id: schema.appointments.id });
+  if (!changed) return;
   await audit(user.id, "appointment.status", `${id} ${appt.status} → ${status}`);
+  // the patient is told when the clinic confirms or cancels (sent after the response)
+  if (status === "CONFIRMED" || status === "CANCELLED") notifyStatusChange(id, status);
   refreshAvailability();
   revalidatePath("/admin", "layout");
+}
+
+/* ------------------------------------------------ planning changes vs bookings */
+
+/** Future active appointments of a doctor (optionally inside a time range). */
+async function upcomingAppointments(doctorId: string, from = new Date(), to?: Date) {
+  return db
+    .select({ startsAt: schema.appointments.startsAt, endsAt: schema.appointments.endsAt })
+    .from(schema.appointments)
+    .where(
+      and(
+        eq(schema.appointments.doctorId, doctorId),
+        inArray(schema.appointments.status, ["PENDING", "CONFIRMED"]),
+        gte(schema.appointments.startsAt, from),
+        to ? lt(schema.appointments.startsAt, to) : undefined,
+      ),
+    )
+    .orderBy(asc(schema.appointments.startsAt))
+    .limit(200);
+}
+
+/** Planning changes never cancel appointments silently: the clinic sees them and decides. */
+function conflictMessage(list: { startsAt: Date }[], what: string): FormState {
+  const shown = list.slice(0, 5).map((a) => `${clinicDay(a.startsAt).split("-").reverse().join("/")} ${clinicTime(a.startsAt)}`);
+  return {
+    conflict: true,
+    error: `${list.length} rendez-vous déjà pris ${what} : ${shown.join(", ")}${list.length > 5 ? "…" : ""}. Prévenez les patients (Rendez-vous → Annuler), ou cochez « Enregistrer quand même ».`,
+  };
 }
 
 /* ----------------------------------------------------------------- doctors */
@@ -138,6 +177,10 @@ export async function updateDoctor(id: string, _: FormState, form: FormData): Pr
   const user = await requireUser("ADMIN");
   const parsed = readDoctor(form);
   if (!parsed.success || !z.string().uuid().safeParse(id).success) return { error: "Champs invalides." };
+  if (!parsed.data.active && form.get("force") !== "on") {
+    const booked = await upcomingAppointments(id);
+    if (booked.length) return conflictMessage(booked, "avec ce médecin");
+  }
   await db.update(schema.doctors).set(parsed.data).where(eq(schema.doctors.id, id));
   await audit(user.id, "doctor.update", id);
   refreshAvailability(true);
@@ -168,6 +211,16 @@ export async function saveSchedule(id: string, _: FormState, form: FormData): Pr
       if (blocks[i].startTime < blocks[i - 1].endTime) return { error: `Plages qui se chevauchent (jour ${weekday}).` };
     }
   }
+  if (form.get("force") !== "on") {
+    // appointments that would fall outside the new hours
+    const outside = (await upcomingAppointments(id)).filter((a) => {
+      const day = clinicDay(a.startsAt);
+      const start = toMinutes(clinicTime(a.startsAt));
+      const end = start + Math.round((a.endsAt.getTime() - a.startsAt.getTime()) / 60_000);
+      return !rows.some((r) => r.weekday === weekdayOf(day) && toMinutes(r.startTime) <= start && end <= toMinutes(r.endTime));
+    });
+    if (outside.length) return conflictMessage(outside, "en dehors des nouveaux horaires");
+  }
   await db.transaction(async (tx) => {
     await tx.delete(schema.schedules).where(eq(schema.schedules.doctorId, id));
     if (rows.length) await tx.insert(schema.schedules).values(rows);
@@ -185,6 +238,12 @@ export async function addAbsence(id: string, _: FormState, form: FormData): Prom
     .safeParse({ startsOn: form.get("startsOn"), endsOn: form.get("endsOn"), reason: form.get("reason") ?? "" });
   if (!parsed.success || parsed.data.startsOn > parsed.data.endsOn || !z.string().uuid().safeParse(id).success) {
     return { error: "Dates invalides." };
+  }
+  if (form.get("force") !== "on") {
+    const from = clinicTimeToUtc(parsed.data.startsOn, "00:00");
+    const to = clinicTimeToUtc(addDays(parsed.data.endsOn, 1), "00:00");
+    const booked = await upcomingAppointments(id, from > new Date() ? from : new Date(), to);
+    if (booked.length) return conflictMessage(booked, "pendant cette absence");
   }
   await db.insert(schema.absences).values({ doctorId: id, ...parsed.data });
   await audit(user.id, "doctor.absence.add", `${id} ${parsed.data.startsOn}→${parsed.data.endsOn}`);
@@ -253,7 +312,7 @@ export async function createUser(_: FormState, form: FormData): Promise<FormStat
     .object({
       name: z.string().trim().min(2).max(80),
       email: z.string().trim().toLowerCase().email(),
-      password: z.string().min(12, "12 caractères minimum").max(128),
+      password, // same rules everywhere (length, 72-byte bcrypt limit, variety)
       role: z.enum(["ADMIN", "STAFF"]),
     })
     .safeParse({ name: form.get("name"), email: form.get("email"), password: form.get("password"), role: form.get("role") });
@@ -288,6 +347,8 @@ const password = z
   .string()
   .min(12, "12 caractères minimum.")
   .max(128, "128 caractères maximum.")
+  // bcrypt only reads the first 72 bytes: longer passwords would be silently truncated
+  .refine((p) => Buffer.byteLength(p, "utf8") <= 72, "72 octets maximum (environ 70 caractères).")
   .refine((p) => new Set(p).size >= 6, "Mot de passe trop simple.");
 
 /** Any logged-in user changes their own password (current password required). Other sessions are closed. */

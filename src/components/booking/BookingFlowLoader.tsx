@@ -20,7 +20,8 @@ export function BookingFlowLoader({ weekdays, maxDaysAhead, ...rest }: Props) {
     const working = new Set(weekdays);
     const today = clinicDay(new Date());
     const out: string[] = [];
-    for (let i = 0; i <= Math.min(maxDaysAhead, 45) && out.length < 21; i++) {
+    // the whole booking window set by the clinic (capped at 6 months to keep the day picker usable)
+    for (let i = 0; i <= Math.min(maxDaysAhead, 180); i++) {
       const d = addDays(today, i);
       if (working.has(weekdayOf(d))) out.push(d);
     }

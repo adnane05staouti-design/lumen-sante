@@ -43,6 +43,7 @@ export default async function DoctorAdmin({ params }: PageProps<"/admin/medecins
         <h2 className="mb-5 font-display text-lg font-semibold">Fiche</h2>
         <ActionForm action={updateDoctor.bind(null, id)} submit="Enregistrer">
           <DoctorFields doctor={doctor} specialties={specialties} />
+          <Force label="Masquer quand même ce médecin s'il a des rendez-vous à venir (les patients sont à prévenir)" />
         </ActionForm>
       </Card>
 
@@ -64,6 +65,7 @@ export default async function DoctorAdmin({ params }: PageProps<"/admin/medecins
               </div>
             ))}
           </div>
+          <Force label="Enregistrer quand même si des rendez-vous déjà pris sortent des nouveaux horaires" />
         </ActionForm>
       </Card>
 
@@ -96,8 +98,19 @@ export default async function DoctorAdmin({ params }: PageProps<"/admin/medecins
               <input name="reason" maxLength={120} className={inputCls} />
             </Field>
           </div>
+          <Force label="Ajouter quand même si des rendez-vous sont déjà pris pendant cette absence" />
         </ActionForm>
       </Card>
     </>
+  );
+}
+
+/** Planning changes that touch booked appointments are refused unless the clinic confirms it has handled them. */
+function Force({ label }: { label: string }) {
+  return (
+    <label className="mt-4 flex items-start gap-2 text-xs text-muted">
+      <input type="checkbox" name="force" className="mt-0.5 accent-[var(--accent)]" />
+      <span>{label}</span>
+    </label>
   );
 }

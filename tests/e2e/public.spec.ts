@@ -104,6 +104,11 @@ test.describe("API de disponibilités", () => {
     const body = await res.json();
     expect(Array.isArray(body.days)).toBe(true);
   });
+  test("date impossible refusée (30 février)", async ({ request }) => {
+    const res = await request.get("/api/slots?specialty=dentaire&day=2027-02-30");
+    expect(res.status()).toBe(400);
+  });
+
   test("spécialité inconnue", async ({ request }) => {
     for (const url of ["/api/availability?specialty=inconnue", "/api/slots?specialty=inconnue&day=2030-01-07"]) {
       const res = await request.get(url);
